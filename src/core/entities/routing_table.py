@@ -1,4 +1,4 @@
-from dash import html
+from dash import html, dash_table
 
 
 class RoutingRecord:
@@ -9,20 +9,20 @@ class RoutingRecord:
         pass
 
     def to_html(self):
-        return html.P("Призначення: %s Шлюз: %s Метрика: %s" % (self.dest, self.gateway, self.weight))
+        return {'Призначення': self.dest, 'Шлюз': self.gateway, 'Метрика': self.weight}
 
 class RoutingTable:
     def __init__(self):
-        self.records = []
+        self.records = {}
 
     def add_record(self, dest, gateway, weight):
-        self.records.append(RoutingRecord(dest, gateway, weight))
+        self.records[dest] = RoutingRecord(dest, gateway, weight)
 
     def to_html(self):
         records = []
         for record in self.records:
-            records.append(record.to_html())
-        return html.Div(records)
+            records.append(self.records[record].to_html())
+        return dash_table.DataTable(records, style_cell={"textAlign": "center", "padding": "6px"}, id='router-table')
 
     def contains(self, dest, gateway, weight):
         for record in self.records:
@@ -31,11 +31,3 @@ class RoutingTable:
                 return True
 
         return False
-
-    def get_link_state_db(self):
-        lsdb = []
-        for record in self.records:
-            if record.dest == record.gateway:
-                lsdb.append(record.dest)
-
-        return lsdb
