@@ -1,7 +1,7 @@
 from dash import Dash, html, dcc, Output, Input, State, no_update
 import dash_cytoscape as cyto
-from pandas.tseries.holiday import next_workday
 
+from src.core import network
 from src.core.network import Network
 
 
@@ -73,6 +73,15 @@ class MainWindow:
             prevent_initial_call=True,
             suppress_callback_exceptions=True
         )(self.find_shortest)
+
+        self.app.callback(
+            Output('graph', 'stylesheet', allow_duplicate=True),
+            Input('transmit', 'n_clicks'),
+            State('graph', 'tapNode'),
+            State('dst_router', 'value'),
+            prevent_initial_call=True,
+            suppress_callback_exceptions=True
+        )(self.transmit_message)
 
         self.app.callback(
             Output('node-info', 'children', allow_duplicate=True),
@@ -181,6 +190,7 @@ class MainWindow:
                 ),
                 dcc.Input(id='dst_router', placeholder='target'),
                 html.Button('Знайти найкоротший шлях до', id='find_shortest', n_clicks=0),
+                html.Button('Відправити пакет', id='transmit', n_clicks=0),
                 html.Button('Заповнити таблицю маршрутизації', id='fillup_routing_table', n_clicks=0),
                 html.Button('Видалити маршрутизатор', id='remove_router', n_clicks=0),
             ]
@@ -192,13 +202,23 @@ class MainWindow:
         print("dest %s" % dst_router)
         path = self.network.find_shortest(int(router['data'].get('id')), int(dst_router))
         styles = []
+        if path is None:
+            return no_update
         for p in path:
             styles.append({
                 'selector': f'edge[source = "{p}"][target = "{path[p]}"], edge[source = "{path[p]}"][target = "{p}"]',
                 'style': {'line-color': 'green', 'width': 4}
             })
-        print(path)
         return self.base_graph_stylesheet + styles
+
+    def transmit_message(self, n, router, dst_router):
+        if not n:
+            return no_update
+
+        self.network.transmit_message(6000, network.TCP, int(router['data'].get('id')), int(dst_router))
+
+        return no_update
+
 
     def display_connection_info(self, tap_connection):
         if tap_connection is None:
@@ -223,9 +243,9 @@ class MainWindow:
 
     def refresh_graph(self):
         elements = []
-        for router in self.network.routers:
+        for router in self.network.routers.values():
             elements.append({'data': {'id': str(router.id), 'label': str(router.id)}})
-            for connection in router.connections:
+            for connection in router.connections.values():
                 if connection.r1.id == router.id:
                     elements.append({'data': {'source': str(router.id), 'target': str(connection.r2.id),
                                               'weight': connection.weight, 'duplex': connection.duplex}})
@@ -237,9 +257,9 @@ class MainWindow:
 
     def refresh_page(self):
         elements = []
-        for router in self.network.routers:
+        for router in self.network.routers.values():
             elements.append({'data': {'id': str(router.id), 'label': str(router.id)}})
-            for connection in router.connections:
+            for connection in router.connections.values():
                 if connection.r1.id == router.id:
                     elements.append({'data': {'source': str(router.id), 'target': str(connection.r2.id), 'weight': connection.weight, 'duplex': connection.duplex}})
 
