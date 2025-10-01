@@ -31,3 +31,8 @@ class RoutingTable:
                 return True
 
         return False
+
+    def get_gateway(self, dest_router_id):
+        if dest_router_id in self.records:
+            return self.records[dest_router_id]
+        return None

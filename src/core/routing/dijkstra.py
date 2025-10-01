@@ -29,42 +29,31 @@ class DijkstraAlgorithm(RoutingStrategy):
         while not queue.empty():
             while not queue.empty():
                 item = queue.get()
-                print(item)
                 if item[1] not in visited:
                     break
             else:
-                print("empty queue")
                 break
             visited.add(item[1])
             if item[1] == dest_router_id:
-                print("dest router")
                 break
 
             lsdb = next(c for c in self.link_state_db if c == item[1])
-            print("lsdb %s size %s" % (lsdb, len(self.link_state_db[lsdb].neighbours)))
             for connection in self.link_state_db[lsdb].neighbours:
                 neighbor = connection.get_connected_router(item[1]).id
                 if neighbor in visited:
-                    print("already visited %s" % neighbor)
                     continue
                 old = costs[neighbor]
                 new = costs[item[1]] + connection.weight
-                print("new %s" % new)
-                print("old %s" % old)
                 if new < old:
                     queue.put((new, neighbor))
                     costs[neighbor] = new
                     connections[neighbor] = connection
-                    print(connections)
-        print("found %s" % (len(connections)))
-        print(connections)
         r = dest_router_id
         ret = {}
         if dest_router_id not in connections:
             return None
         sum_weight = 0
         while r is not None:
-            print(r)
             conn = connections[r]
             r = conn.get_connected_router(r).id if conn is not None else None
             if r is not None:
