@@ -2,6 +2,7 @@ from src.core import network
 from src.core.entities.link_state_db import LinkStateDB
 from src.core.entities.network.packets.IPLayerPacket import IPLayerPacket
 from src.core.entities.network.packets.packet import TransportLayerPacket
+from src.core.entities.network.stats.l3_stats import L3Stats
 from src.core.entities.routing_table import RoutingTable
 from src.core.routing.dijkstra import DijkstraAlgorithm
 
@@ -17,6 +18,7 @@ class Router(object):
         self.rxq = []
         self.txq = []
         self.frags = {}
+        self.l3_stats = L3Stats()
         pass
 
     def add_connection(self, channel, dest):
@@ -31,26 +33,23 @@ class Router(object):
 
 
     def remove_connection(self, dest, router_disconnected):
-        connection = next(c for c in self.connections if c.get_connected_router(self.id).id == dest)
-        del self.connections[connection]
+        connection = self.connections[dest]
         if not router_disconnected:
             connection.get_connected_router(self.id).remove_connection(self.id, True)
-
-        pass
+        del self.connections[dest]
+        del self.topology[dest]
+        self.routing_table.remove_record(dest)
 
     def advertise_links(self, link_state_db):
         self.link_state_db = LinkStateDB(self)
-
         if link_state_db is None:
             link_state_db = self.link_state_db
 
         # do not add links state DB if router already has a valid record
         if link_state_db.router.id in self.topology and len(self.topology[link_state_db.router.id].neighbours) == len(link_state_db.neighbours):
             return
-
         if self.id != link_state_db.router.id:
             self.topology[link_state_db.router.id] = link_state_db.copy()
-
         # propagate link state DB between all routers except source of packet
         for connection in self.connections.values():
             router = connection.get_connected_router(self.id)
@@ -85,10 +84,7 @@ class Router(object):
         seq_num = IPLayerPacket.next_sequence_number()
         frag_num = 0
         while message_size > 0:
-            #print("message_left %s" % message_size)
             more_fragments = 1
-            if frag_num == 2:
-                frag_num = 5
             if message_size <= network.MTU - IPLayerPacket.HEADER_SIZE:
                 more_fragments = 0
             ip_packet = IPLayerPacket(self.id, dest, message, seq_num, frag_num, more_fragments)
@@ -105,14 +101,15 @@ class Router(object):
         record = self.routing_table.get_gateway(packet.dest)
         if record is None:
             return
+        self.l3_stats.update_tx_stats(packet)
         self.connections[record.gateway].transmit(self.id, packet)
 
     def receive(self, packet: IPLayerPacket):
         if packet.dest == self.id:
-            #print("rec %s" % packet.more_fragments)
             # simulate reassembly of IP packet on RX side
             if packet.seq_num not in self.frags:
                 self.frags[packet.seq_num] = -1
+            #print("frag num %s" % packet.frag_num)
             # Real IP protocol uses fragment offset field to reassemble the packet,
             # but for simulation purposes it is enough to use just idx
             if self.frags[packet.seq_num] == packet.frag_num - 1:
@@ -120,14 +117,16 @@ class Router(object):
                 if packet.more_fragments:
                     return
                 else:
-                    #print("r %s received %s" % (self.id, len(self.rxq)))
+                    #print("r %s received %s" % (self.id, packet.transport_layer_packet.get_message_size()))
                     self.rxq.append(packet.transport_layer_packet)
                     del self.frags[packet.seq_num]
             else:
                 # Drop the whole transport layer packet
+                #print("r %s drop" % self.id)
                 del self.frags[packet.seq_num]
         else:
             self.forward(packet)
+        self.l3_stats.update_rx_stats(packet)
         pass
 
     def pop_transport_layer_packet(self):

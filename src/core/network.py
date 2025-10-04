@@ -7,9 +7,11 @@ from src.core.entities.network.packets.tcp_packet import TCPPacket
 from src.core.entities.network.proto.proto import TransportLayerProtocol
 from src.core.entities.network.proto.tcp import TransmissionControlProtocol
 from src.core.entities.network.proto.tcp_sm import TCPStateMachine
+from src.core.entities.network.proto.udp import UserDatagramProtocol
 from src.core.entities.router import Router
 
 MTU = 1500
+ERROR_RATE = 0.02
 TCP = 0
 UDP = 1
 
@@ -17,6 +19,7 @@ class Network:
     def __init__(self):
         self.routers = {}
         self.serial = 0
+        self.transmission_in_progress = False
         pass
 
     def get_router_by_id(self, router_id):
@@ -64,25 +67,38 @@ class Network:
 
     def remove_connection(self, r1, r2):
         router = self.get_router_by_id(r1)
+        connected_router = self.get_router_by_id(r2)
         router.remove_connection(r2, False)
         router.advertise_links(None)
+        connected_router.advertise_links(None)
 
     def generate(self):
         self.serial = 0
         self.routers = {}
-        routers_num = random.randint(25, 30)
+        routers_num = 29
+
         for i in range(0, routers_num):
             self.add_router()
-        touched = [False] * (routers_num + 1)
-        while not all(touched):
-            r1 = random.randint(0, routers_num)
-            r2 = (r1 + random.randint(0, 3)) % routers_num
-            if r1 == r2:
-                continue
-            touched[r1] = True
-            touched[r2] = True
-            weight = random.randint(1, routers_num)
-            self.add_connection(r1, r2, weight, random.randint(0, 1))
+
+        def generate_subnet(index_from, index_to):
+            for i in range(index_from, index_to):
+                for j in range(index_from, index_to):
+                    weight = random.randint(1, routers_num)
+                    if random.random() < 0.1:
+                        self.add_connection(i, j, weight, random.randint(0, 1))
+
+                for j in range(index_from, index_to):
+                    if not self.get_router_by_id(j).connections or len(self.get_router_by_id(j).connections) < 2:
+
+                        self.add_connection(j, random.randint(index_from, index_to - 1), random.randint(1, routers_num), random.randint(0, 1))
+
+        generate_subnet(0, 10)
+        generate_subnet(10, 20)
+        generate_subnet(20, routers_num)
+        self.add_connection(9, 10, 1, 1)
+        self.add_connection(19, 20, 1, 1)
+        self.add_connection(29, 0, 1, 1)
+
 
     def get_avg_network_power(self):
         avg_network_power = 0
@@ -105,29 +121,42 @@ class Network:
 
         return ret
 
+    def get_l3_stats(self, router_id):
+        r = self.get_router_by_id(router_id)
+        return r.l3_stats
+
     def transmit_message(self, message_size, protocol, src, dst):
+        if self.transmission_in_progress:
+            return None, None
+
+        self.transmission_in_progress = True
         src_router = self.get_router_by_id(src)
         dst_router = self.get_router_by_id(dst)
-        #print("dest router: %s" % dst)
-        #transport_layer_msg = TCPPacket(src, dst, 1472, TCPPacket.DATA)
-        #print("transport_layer_msg: %s" % transport_layer_msg.get_message_size())
-        #src_router.transmit(dst, transport_layer_msg)
-        t1 = TCPStateMachine(TransmissionControlProtocol(src_router, RawData(10000), MTU - IPLayerPacket.HEADER_SIZE))
-        t2 = TCPStateMachine(TransmissionControlProtocol(dst_router, None))
-        t1.set_dest_router_id(dst)
-        t1.init_connect()
-        for i in range(0, 5):
-            t1.next()
-            t2.next()
-        t1.init_transmit()
-        print(t1.more_data())
-        while t1.more_data():
-            t1.next()
-            t2.next()
-        print("done!")
-        # if protocol == TCP:
-        #    tcp = TransportLayerProtocol(router)
-        #    tcp.send_message(RawData(message_size), dst)
-        #else:
-        #    pass
+        message = RawData(message_size)
 
+        if protocol == TCP:
+            t1 = TCPStateMachine(TransmissionControlProtocol(src_router, message, MTU - IPLayerPacket.HEADER_SIZE))
+            t2 = TCPStateMachine(TransmissionControlProtocol(dst_router, message))
+            t1.set_dest_router_id(dst)
+            t1.init_connect()
+
+            while not (t1.connection_established or t2.connection_established):
+                t1.next()
+                t2.next()
+                print(t1.connection_established, t2.connection_established)
+            t1.init_transmit()
+
+            while t1.more_data():
+                t1.next()
+                t2.next()
+
+            print("done")
+            self.transmission_in_progress = False
+            return t1.tcp_proto.l4_stats, t2.tcp_proto.l4_stats
+        else:
+            u1 = UserDatagramProtocol(src_router, message, MTU - IPLayerPacket.HEADER_SIZE)
+            u2 = UserDatagramProtocol(dst_router, message)
+            u1.transmit_message(dst)
+            u2.receive_message()
+            self.transmission_in_progress = False
+            return u1.l4_stats, u2.l4_stats

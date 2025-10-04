@@ -1,3 +1,6 @@
+import random
+
+from src.core import network
 from src.core.entities.network.packets.IPLayerPacket import IPLayerPacket
 from src.core.entities.router import Router
 
@@ -16,6 +19,20 @@ class Channel(object):
     def equals(self, r1, r2):
         return (self.r1.id == r1 and self.r2.id == r2) or (self.r1.id == r2 and self.r2.id == r1)
 
+
+    @staticmethod
+    def drop_with_probability(probability, message):
+        return random.random() < probability * message.msg_size / network.MTU
+
     def transmit(self, src, message: IPLayerPacket):
+        jitter = message.msg_size * self.weight
+        if self.duplex == 0:
+            jitter *= 2
+
+        # Drop the packet with certain error rate depending on packet size:
+        # the smaller the packet -> less drop probability
+        if self.drop_with_probability(network.ERROR_RATE, message):
+            return
+        jitter *= 0.0001
+        message.transport_layer_packet.inc_jitter(jitter)
         self.get_connected_router(src).receive(message)
-        pass
