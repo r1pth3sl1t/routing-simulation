@@ -3,6 +3,7 @@ class TransportLayerPacket:
         self.src_router_id = src_router_id
         self.dest_router_id = dest_router_id
         self.message_size = message_size
+        self.time_travelled = 0
         pass
 
     def get_header_size(self):
@@ -10,3 +11,6 @@ class TransportLayerPacket:
 
     def get_message_size(self):
         return self.message_size + self.get_header_size()
+
+    def inc_jitter(self, jitter):
+        self.time_travelled += jitter
