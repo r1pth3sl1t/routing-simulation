@@ -9,15 +9,15 @@ class TransmitStatsGUIComponent:
         pass
 
     def overall_stats_to_dict(self):
-        return [{
+        return {
             "Втрати":  self.transmit_stats.get_error_rate(),
             "Перевідправлень": self.transmit_stats.get_retransmits(),
             "Час": self.transmit_stats.get_overall_time(),
-        }]
+        }
 
     def overall_stats_to_html(self):
         return dash_table.DataTable(
-            self.overall_stats_to_dict(),
+            [self.overall_stats_to_dict()],
             columns=[
                 {'name': 'Втрати', 'id': 'Втрати'},
                 {'name': 'Перевідправлень', 'id': 'Перевідправлень'},
@@ -57,7 +57,6 @@ class TransmitStatsGUIComponent:
             StatsTableGUIComponent(self.transmit_stats.rx_l4_stats.stats).to_html(),
             self.overall_stats_to_html()],
             style={
-                "maxHeight": "250px",
                 "overflowY": "auto",
                 "border": "1px solid #ccc",
                 "borderRadius": "6px",

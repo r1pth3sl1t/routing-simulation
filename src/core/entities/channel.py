@@ -1,7 +1,7 @@
 import random
 
 from src.core import network
-from src.core.entities.network.packets.IPLayerPacket import IPLayerPacket
+from src.core.entities.network.packets.ip_packet import IPLayerPacket
 from src.core.entities.router import Router
 
 
@@ -33,6 +33,6 @@ class Channel(object):
         # the smaller the packet -> less drop probability
         if self.drop_with_probability(network.ERROR_RATE, message):
             return
-        jitter *= 0.0001
+        jitter *= 0.000001
         message.transport_layer_packet.inc_jitter(jitter)
         self.get_connected_router(src).receive(message)

@@ -19,7 +19,6 @@ class IPLayerPacket:
         self.frag_num = frag_num
         self.more_fragments = more_fragments
         self.frag_size = self.msg_size
-        #print("self.msg_size %s" % self.msg_size)
         if self.msg_size > network.MTU:
             if self.more_fragments:
                 self.frag_size = network.MTU
@@ -29,7 +28,6 @@ class IPLayerPacket:
                 # by not computing packet size outsize of packet creation and passing it in constructor but inside it
                 # last fragment size = rest of message from L4 + size of all IP headers in previous fragments
                 self.frag_size = self.msg_size % network.MTU + (self.msg_size // network.MTU) * IPLayerPacket.HEADER_SIZE
-        # print("frag %s" % self.frag_size)
 
     @staticmethod
     def next_sequence_number(ip_layer_packet=None):
