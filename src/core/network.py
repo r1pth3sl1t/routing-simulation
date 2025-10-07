@@ -1,19 +1,27 @@
+import csv
+import os
 import random
 
 from src.core.entities.channel import Channel
-from src.core.entities.network.packets.IPLayerPacket import IPLayerPacket
+from src.core.entities.network.packets.ip_packet import IPLayerPacket
 from src.core.entities.network.packets.data import RawData
-from src.core.entities.network.packets.tcp_packet import TCPPacket
-from src.core.entities.network.proto.proto import TransportLayerProtocol
 from src.core.entities.network.proto.tcp import TransmissionControlProtocol
 from src.core.entities.network.proto.tcp_sm import TCPStateMachine
 from src.core.entities.network.proto.udp import UserDatagramProtocol
 from src.core.entities.router import Router
+from src.core.utils.benchmark_stats import BenchmarkStats
+from src.core.utils.transmit_stats import TransmitStats
+
+DEFAULT_MTU = 1500
+DEFAULT_ERROR_RATE = 0.02
 
 MTU = 1500
 ERROR_RATE = 0.02
 TCP = 0
 UDP = 1
+BENCHMARK_CFG = {"MTU": "../../tests/mtu.csv",
+                 "ERR_RATE": "../../tests/err_rate.csv",
+                 "MESSAGE_SIZE": "../../tests/msg_size.csv"}
 
 class Network:
     def __init__(self):
@@ -54,7 +62,6 @@ class Network:
             connection = Channel(r[0], r[1], duplex, weight)
             c1 = r[0].add_connection(connection, r[1].id)
             c2 = r[1].add_connection(connection, r[0].id)
-            #print("create %s %s" % (r1, r2))
             if c1 and c2:
                 r[0].advertise_links(None)
                 r[1].advertise_links(None)
@@ -143,20 +150,46 @@ class Network:
             while not (t1.connection_established or t2.connection_established):
                 t1.next()
                 t2.next()
-                print(t1.connection_established, t2.connection_established)
             t1.init_transmit()
 
             while t1.more_data():
                 t1.next()
                 t2.next()
 
-            print("done")
             self.transmission_in_progress = False
-            return t1.tcp_proto.l4_stats, t2.tcp_proto.l4_stats
+            return TransmitStats(src_router.l3_stats,
+                          t1.tcp_proto.l4_stats,
+                          dst_router.l3_stats,
+                          t2.tcp_proto.l4_stats,
+                          message_size, MTU, "TCP", ERROR_RATE)
         else:
             u1 = UserDatagramProtocol(src_router, message, MTU - IPLayerPacket.HEADER_SIZE)
             u2 = UserDatagramProtocol(dst_router, message)
             u1.transmit_message(dst)
             u2.receive_message()
             self.transmission_in_progress = False
-            return u1.l4_stats, u2.l4_stats
+            return TransmitStats(src_router.l3_stats,
+                          u1.l4_stats,
+                          dst_router.l3_stats,
+                          u2.l4_stats,
+                          message_size, MTU, "UDP", ERROR_RATE)
+
+    def benchmark(self, src, dst, benchmark_type):
+        src_router = self.get_router_by_id(src)
+        dst_router = self.get_router_by_id(dst)
+        global MTU
+        global ERROR_RATE
+        with open(os.path.join(__file__, BENCHMARK_CFG[benchmark_type]), newline='') as cfg:
+            cfg_reader = csv.DictReader(cfg)
+            benchmark_stats = BenchmarkStats()
+
+            for row in cfg_reader:
+                MTU = int(row['mtu'])
+                ERROR_RATE = float(row['err_rate'])
+                message_size = int(row['message_size'])
+                proto = row['proto']
+                benchmark_stats.add_record(self.transmit_message(message_size, 0 if proto == "TCP" else 1, src, dst))
+
+        MTU = DEFAULT_MTU
+        ERROR_RATE = DEFAULT_ERROR_RATE
+        return benchmark_stats

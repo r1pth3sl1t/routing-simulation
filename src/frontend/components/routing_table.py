@@ -5,7 +5,7 @@ class RoutingRecordGUIComponent:
         self.record = record
         pass
 
-    def to_html(self):
+    def to_dict(self):
         return {'Призначення': self.record.dest,
                 'Шлюз': self.record.gateway,
                 'Метрика': self.record.weight}
@@ -17,7 +17,7 @@ class RoutingTableGUIComponent:
     def to_html(self):
         records = []
         for record in self.routing_table.records:
-            records.append(RoutingRecordGUIComponent(self.routing_table.records[record]).to_html())
+            records.append(RoutingRecordGUIComponent(self.routing_table.records[record]).to_dict())
         return dash_table.DataTable(records,
             style_table={
                 'maxHeight': '250px',

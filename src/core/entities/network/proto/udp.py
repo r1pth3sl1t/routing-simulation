@@ -25,8 +25,16 @@ class UserDatagramProtocol(TransportLayerProtocol):
 
             datagram = UDPPacket(self.router.id, dest_router_id, packet_size)
             self.l4_stats.update_tx_stats(datagram)
-            self.router.transmit(datagram)
             self.data_left -= packet_size
+            self.router.transmit(datagram)
+            # Actually this is a hack and violates the "realistic network model" design:
+            # in real networks there is way to measure jitter only if packet
+            # is received on RX side and the response frame with timestamp has been
+            # delivered to the sender.
+            # But implementing this would make single-threaded and non-interruptible design overcomplicated.
+            # Our use case is actually measuring time for all packets,
+            # including dropped ones (especially for the variable error rate test suit)
+            self.l4_stats.inc_time(datagram.time_travelled)
 
     def receive_message(self):
         while True:

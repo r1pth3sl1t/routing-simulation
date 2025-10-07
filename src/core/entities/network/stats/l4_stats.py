@@ -13,8 +13,10 @@ class L4Stats(object):
             self.stats.update_tx_stats(packet.get_message_size() - packet.get_header_size(), packet.get_header_size())
         pass
 
+    def inc_time(self, time):
+        self.time += time
+
     def update_rx_stats(self, packet: TransportLayerPacket):
         if packet is not None:
             self.stats.update_rx_stats(packet.get_message_size() - packet.get_header_size(), packet.get_header_size())
-            self.time += packet.time_travelled
         pass

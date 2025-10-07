@@ -1,4 +1,4 @@
-from src.core.entities.network.packets.IPLayerPacket import IPLayerPacket
+from src.core.entities.network.packets.ip_packet import IPLayerPacket
 from src.core.entities.network.stats.stats import StatsTable
 
 

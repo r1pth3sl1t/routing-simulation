@@ -15,11 +15,18 @@ class TransmissionControlProtocol(TransportLayerProtocol):
             self.data_left = self.message.msg_size
             if self.mtu == 0:
                 self.mtu = self.message.msg_size + TCPPacket.HEADER_SIZE
-        print("data left %s" % self.data_left)
 
     def transmit_segment(self, packet: TCPPacket):
         self.l4_stats.update_tx_stats(packet)
         self.router.transmit(packet)
+        # Actually this is a hack and violates the "realistic network model" design:
+        # in real networks there is way to measure jitter only if packet
+        # is received on RX side and the response frame with timestamp has been
+        # delivered to the sender.
+        # But implementing this would make single-threaded and non-interruptible design overcomplicated.
+        # Our use case is actually measuring time for all packets,
+        # including dropped ones (especially for the variable error rate test suit)
+        self.l4_stats.inc_time(packet.time_travelled)
 
     def receive_message(self):
         packet = self.router.pop_transport_layer_packet()

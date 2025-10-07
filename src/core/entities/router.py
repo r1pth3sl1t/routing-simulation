@@ -1,6 +1,6 @@
 from src.core import network
 from src.core.entities.link_state_db import LinkStateDB
-from src.core.entities.network.packets.IPLayerPacket import IPLayerPacket
+from src.core.entities.network.packets.ip_packet import IPLayerPacket
 from src.core.entities.network.packets.packet import TransportLayerPacket
 from src.core.entities.network.stats.l3_stats import L3Stats
 from src.core.entities.routing_table import RoutingTable
@@ -49,6 +49,9 @@ class Router(object):
         if link_state_db.router.id in self.topology and len(self.topology[link_state_db.router.id].neighbours) == len(link_state_db.neighbours):
             return
         if self.id != link_state_db.router.id:
+            # force routing table to refresh the records after topology change
+            # for the next transmission
+            self.routing_table.remove_record(link_state_db.router.id)
             self.topology[link_state_db.router.id] = link_state_db.copy()
         # propagate link state DB between all routers except source of packet
         for connection in self.connections.values():
@@ -109,7 +112,6 @@ class Router(object):
             # simulate reassembly of IP packet on RX side
             if packet.seq_num not in self.frags:
                 self.frags[packet.seq_num] = -1
-            #print("frag num %s" % packet.frag_num)
             # Real IP protocol uses fragment offset field to reassemble the packet,
             # but for simulation purposes it is enough to use just idx
             if self.frags[packet.seq_num] == packet.frag_num - 1:
@@ -117,12 +119,10 @@ class Router(object):
                 if packet.more_fragments:
                     return
                 else:
-                    #print("r %s received %s" % (self.id, packet.transport_layer_packet.get_message_size()))
                     self.rxq.append(packet.transport_layer_packet)
                     del self.frags[packet.seq_num]
             else:
                 # Drop the whole transport layer packet
-                #print("r %s drop" % self.id)
                 del self.frags[packet.seq_num]
         else:
             self.forward(packet)

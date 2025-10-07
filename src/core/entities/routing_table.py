@@ -1,6 +1,3 @@
-from dash import html, dash_table
-
-
 class RoutingRecord:
     def __init__(self, dest, gateway, weight):
         self.dest = dest
@@ -15,8 +12,17 @@ class RoutingTable:
     def add_record(self, dest, gateway, weight):
         self.records[dest] = RoutingRecord(dest, gateway, weight)
 
+    # Remove all records related to the dest router, including records where it is a gateway
     def remove_record(self, dest):
-        del self.records[dest]
+        if dest in self.records:
+            del self.records[dest]
+        gw_keys = []
+        for record in self.records:
+            if self.records[record].gateway == dest:
+                gw_keys.append(record)
+
+        for record in gw_keys:
+            del self.records[record]
 
     def contains(self, dest, gateway, weight):
         for record in self.records:

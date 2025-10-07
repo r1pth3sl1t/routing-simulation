@@ -4,7 +4,7 @@ class StatsTableGUIComponent:
     def __init__(self, stats):
         self.stats = stats
 
-    def tx_stats_to_html(self):
+    def tx_stats_to_dict(self):
         tx_stats = {
             'TYPE': 'TX',
             'OVERALL': self.stats.tx_stats.overall_bytes,
@@ -13,7 +13,7 @@ class StatsTableGUIComponent:
         }
         return tx_stats
 
-    def rx_stats_to_html(self):
+    def rx_stats_to_dict(self):
         rx_stats = {
             'TYPE': 'RX',
             'OVERALL': self.stats.rx_stats.overall_bytes,
@@ -23,7 +23,7 @@ class StatsTableGUIComponent:
         return rx_stats
 
     def to_html(self):
-        records = [self.tx_stats_to_html(), self.rx_stats_to_html()]
+        records = [self.tx_stats_to_dict(), self.rx_stats_to_dict()]
         return dash_table.DataTable(
             records,
             columns=[

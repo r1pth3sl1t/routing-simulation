@@ -4,6 +4,7 @@ import dash_cytoscape as cyto
 from src.core import network
 from src.core.network import Network
 from src.core.utils.transmit_stats import TransmitStats
+from src.frontend.components.benchmark_stats import BenchmarkStatsGUIComponent
 from src.frontend.components.routing_table import RoutingTableGUIComponent
 from src.frontend.components.stats_table import StatsTableGUIComponent
 from src.frontend.components.transmit_stats import TransmitStatsGUIComponent
@@ -53,7 +54,7 @@ class MainWindow:
     def __init__(self):
         self.network = Network()
         self.elements = []
-        self.app = Dash(__name__)
+        self.app = Dash(__name__, suppress_callback_exceptions=True,)
 
         self.app.callback(
             [Output('graph', 'elements', allow_duplicate=True),
@@ -72,7 +73,6 @@ class MainWindow:
              Output('network_power', 'children', allow_duplicate=True)],
             Input('remove_connection', 'n_clicks'),
             State('graph', 'tapEdge'),
-            suppress_callback_exceptions=True,
             prevent_initial_call=True,
         )(self.remove_connection)
 
@@ -82,7 +82,6 @@ class MainWindow:
             Input('remove_router', 'n_clicks'),
             State('graph', 'tapNode'),
             prevent_initial_call=True,
-            suppress_callback_exceptions=True
         )(self.remove_router)
 
         self.app.callback(
@@ -91,26 +90,34 @@ class MainWindow:
             State('graph', 'tapNode'),
             State('dst_router', 'value'),
             prevent_initial_call=True,
-            suppress_callback_exceptions=True
         )(self.find_shortest)
 
         self.app.callback(
-            Output('node-info', 'children', allow_duplicate=True),
+            [Output('transmit_stats', 'children', allow_duplicate=True),
+                    Output('l3_stats', 'children', allow_duplicate=True)],
             Input('transmit', 'n_clicks'),
             State('graph', 'tapNode'),
             State('dst_router', 'value'),
             State('message_size', 'value'),
             State('proto', 'value'),
             prevent_initial_call=True,
-            suppress_callback_exceptions=True
         )(self.transmit_message)
+
+        self.app.callback(
+            [Output('transmit_stats', 'children', allow_duplicate=True),
+             Output('l3_stats', 'children', allow_duplicate=True)],
+            Input('benchmark', 'n_clicks'),
+            State('graph', 'tapNode'),
+            State('dst_router', 'value'),
+            State('benchmark_type', 'value'),
+            prevent_initial_call=True,
+        )(self.benchmark)
 
         self.app.callback(
             Output('node-info', 'children', allow_duplicate=True),
             Input('fillup_routing_table', 'n_clicks'),
             State('graph', 'tapNode'),
             prevent_initial_call=True,
-            suppress_callback_exceptions=True
         )(self.fillup_routing_table)
 
         self.app.callback(
@@ -122,7 +129,7 @@ class MainWindow:
 
         self.app.callback(
             [Output('graph', 'elements', allow_duplicate=True),
-            Output('network_power', 'elements', allow_duplicate=True)],
+            Output('network_power', 'children', allow_duplicate=True)],
             Input('generate_network', 'n_clicks'),
             State('graph', 'elements'),
             prevent_initial_call=True
@@ -133,13 +140,14 @@ class MainWindow:
             Input('graph', 'tapNode'),
             prevent_initial_call = True
         )(self.display_router_info)
+
         self.app.callback(
             Output('node-info', 'children', allow_duplicate=True),
             Input('graph', 'tapEdge'),
             prevent_initial_call=True
         )(self.display_connection_info)
 
-        self.app.layout = self.refresh_page
+        self.app.layout = lambda: self.refresh_page()
 
 
         pass
@@ -195,6 +203,11 @@ class MainWindow:
         self.network.remove_router(int(data.get('id')))
         return self.refresh_graph(), self.refresh_network_power()
 
+    def update_l3_stats(self, router_id):
+        router = self.network.get_router_by_id(router_id)
+        stats_table = StatsTableGUIComponent(router.l3_stats.stats).to_html(),
+        return stats_table
+
     def display_router_info(self, tap_node):
         if tap_node is None:
             return no_update
@@ -202,7 +215,6 @@ class MainWindow:
         data = tap_node['data']
         router = self.network.get_router_by_id(int(data['id']))
 
-        # Таблицы
         routing_table_div = html.Div(
             RoutingTableGUIComponent(router.routing_table).to_html(),
             style={
@@ -217,7 +229,8 @@ class MainWindow:
         )
 
         stats_table_div = html.Div(
-            StatsTableGUIComponent(router.l3_stats.stats).to_html(),
+            self.update_l3_stats(int(data['id'])),
+            id='l3_stats',
             style={
                 "maxHeight": "250px",
                 "overflowY": "auto",
@@ -230,9 +243,8 @@ class MainWindow:
             }
         )
 
-        # Панель ввода и кнопок
         controls_div = html.Div([
-            dcc.Input(id='dst_router', placeholder='target', value='0',
+            dcc.Input(id='dst_router', placeholder='Маршрутизатор мережі призначення', value='0',
                       style={
                           "height": "36px",
                           "padding": "6px 10px",
@@ -244,7 +256,7 @@ class MainWindow:
                           "display": "inline-block",
                           "verticalAlign": "middle"
                       }),
-            dcc.Input(id='message_size', placeholder='target', value=10000,
+            dcc.Input(id='message_size', placeholder='Розмір повідомлення', value=10000,
                       type='number',
                       style={
                           "height": "36px",
@@ -282,7 +294,36 @@ class MainWindow:
             html.Button('Заповнити таблицю маршрутизації', id='fillup_routing_table', n_clicks=0,
                         style=self.button_style),
             html.Button('Видалити маршрутизатор', id='remove_router', n_clicks=0,
-                        style=self.button_style)
+                        style=self.button_style),
+            html.Div([
+                dcc.Dropdown(
+                    id="benchmark_type",
+                    options=[
+                        {"label": "MTU", "value": "MTU"},
+                        {"label": "Ймовірність помилки", "value": "ERR_RATE"},
+                        {"label": "Розмір повідомлення", "value": "MESSAGE_SIZE"},
+                    ],
+                    value="MTU",
+                    clearable=False,
+                    style={
+                        "height": "36px",
+                        "lineHeight": "36px",
+                        "minWidth": "200px",
+                        "borderRadius": "6px",
+                        "fontSize": "14px",
+                        "display": "inline-block",
+                        "verticalAlign": "middle"
+                    },
+                ),
+                html.Button('Провести тестування для пареметру мережі', id='benchmark', n_clicks=0,
+                            style=self.button_style)],
+                style={
+                    "display": "flex",
+                    "flexWrap": "wrap",
+                    "alignItems": "center",
+                    "gap": "10px",
+                    "marginBottom": "10px"
+                })
         ], style={
             "display": "flex",
             "flexWrap": "wrap",
@@ -295,9 +336,13 @@ class MainWindow:
             html.P(f"Ідентифікатор: {data.get('label')}", style={"fontWeight": "bold", "marginBottom": "10px"}),
             routing_table_div,
             stats_table_div,
-            controls_div
-        ], style={"padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "8px",
-                  "boxShadow": "2px 2px 10px rgba(0,0,0,0.1)"})
+            controls_div,
+        ], style={
+            "padding": "10px",
+            "backgroundColor": "#f9f9f9",
+            "borderRadius": "8px",
+            "boxShadow": "2px 2px 10px rgba(0,0,0,0.1)"
+        })
 
     def find_shortest(self, n, router, dst_router):
         if not n:
@@ -315,17 +360,20 @@ class MainWindow:
 
     def transmit_message(self, n, router, dst_router, message_size, proto):
         if not n:
-            return no_update
+            return no_update, no_update
         src_router_id = int(router['data'].get('id'))
         dst_router_id = int(dst_router)
-        src_stats, dest_stats = self.network.transmit_message(int(message_size), proto, src_router_id, dst_router_id)
-        return [self.display_router_info(router), TransmitStatsGUIComponent(
-                                                    TransmitStats(self.network.get_l3_stats(src_router_id),
-                                                                  src_stats,
-                                                                  self.network.get_l3_stats(dst_router_id),
-                                                                  dest_stats,
-                                                                  message_size))
-                                                    .to_html()]
+        transmit_stats = self.network.transmit_message(int(message_size), proto, src_router_id, dst_router_id)
+        return TransmitStatsGUIComponent(transmit_stats).to_html(), self.update_l3_stats(src_router_id)
+
+    def benchmark(self, n, router, dst_router, benchmark_type):
+        if not n:
+            return html.Div(), no_update
+
+        src_router_id = int(router['data'].get('id'))
+        dst_router_id = int(dst_router)
+        benchmark_stats = self.network.benchmark(src_router_id, dst_router_id, benchmark_type)
+        return BenchmarkStatsGUIComponent(benchmark_stats).to_html(), self.update_l3_stats(src_router_id)
 
 
     def display_connection_info(self, tap_connection):
@@ -346,7 +394,6 @@ class MainWindow:
             return elements, no_update
 
         self.network.generate()
-        print("avg", self.network.get_avg_network_power())
         return self.refresh_graph(), self.refresh_network_power()
 
     def refresh_graph(self):
@@ -382,7 +429,7 @@ class MainWindow:
                         'animate': True
                     },
                     style={
-                        'width': '60%',
+                        'width': '55%',
                         'height': '600px',
                         'border': '1px solid #ddd',
                         'borderRadius': '8px',
@@ -394,16 +441,19 @@ class MainWindow:
                 ),
                 html.Div([
                     html.Div(
-                        id='node-info',
-                        children="Натисніть на елемент, щоб отримати інформацію",
-                        style={
-                            'padding': '10px',
-                            'border': '1px solid #ddd',
-                            'borderRadius': '8px',
-                            'backgroundColor': '#fafafa',
-                            'height': '580px',
-                            'overflowY': 'auto',
-                            'boxShadow': '0 2px 6px rgba(0,0,0,0.1)',
+                        [html.Div(
+                            id='node-info',
+                            children="Натисніть на елемент, щоб отримати інформацію",
+                        ),
+                        html.Div(id='transmit_stats'),
+                        ],style={
+                                'padding': '10px',
+                                'border': '1px solid #ddd',
+                                'borderRadius': '8px',
+                                'backgroundColor': '#fafafa',
+                                'height': '580px',
+                                'overflowY': 'auto',
+                                'boxShadow': '0 2px 6px rgba(0,0,0,0.1)',
                         }
                     ),
                     html.Footer([
@@ -416,7 +466,9 @@ class MainWindow:
                         "color": "#555",
                         "fontSize": "14px"
                     })
-                ], style={'flex': 1})
+                ], style={
+                    'flex': 1,
+                })
             ], style={
                 'display': 'flex',
                 'flexDirection': 'row',
@@ -430,6 +482,7 @@ class MainWindow:
                           "padding": "6px 10px",
                           "border": "1px solid #ccc",
                           "borderRadius": "6px",
+                          "maxWidth": "100px",
                           "boxSizing": "border-box",
                           "lineHeight": "normal",
                           "fontSize": "14px",
@@ -440,6 +493,7 @@ class MainWindow:
                           "height": "36px",
                           "padding": "6px 10px",
                           "border": "1px solid #ccc",
+                          "maxWidth": "100px",
                           "borderRadius": "6px",
                           "boxSizing": "border-box",
                           "lineHeight": "normal",
@@ -452,6 +506,7 @@ class MainWindow:
                           "padding": "6px 10px",
                           "border": "1px solid #ccc",
                           "borderRadius": "6px",
+                          "maxWidth": "100px",
                           "boxSizing": "border-box",
                           "lineHeight": "normal",
                           "fontSize": "14px",
@@ -469,7 +524,7 @@ class MainWindow:
                 style={
                     "height": "36px",
                     "lineHeight": "36px",
-                    "minWidth": "100px",
+                    "minWidth": "150px",
                     "borderRadius": "6px",
                     "fontSize": "14px",
                     "display": "inline-block",
@@ -483,6 +538,7 @@ class MainWindow:
             ),
         ], style={
             'display': 'flex',
+            'width': '55%',
             'flexDirection': 'row',
             'alignItems': 'center',
             'margin': '10px 0',

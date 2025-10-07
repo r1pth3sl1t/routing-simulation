@@ -55,7 +55,6 @@ class TCPStateMachine:
             self.state = TCPStateMachine.CONNECT
 
     def init_transmit(self):
-        print("init transmit", self.destination_router_id, self.connection_established)
         if self.destination_router_id >= 0 and self.connection_established:
             self.state = TCPStateMachine.TRANSMIT
 
@@ -72,23 +71,19 @@ class TCPStateMachine:
         pass
 
     def connect(self):
-        print("send syn")
         self.tcp_proto.syn(self.destination_router_id)
         self.state = TCPStateMachine.THREE_WAY_HANDSHAKE_SYN_ACK
 
     # listen for all incoming messages, drop all except TCP.SYN
     def three_way_handshake_syn_listen(self):
         packet = self.consume_packet()
-        #print("packet", packet)
         if packet is not None and packet.type == TCPPacket.SYN:
-            print("syn handler %s " % self.tcp_proto.router.id)
             self.destination_router_id = packet.src_router_id
             self.tcp_proto.syn_ack(packet.src_router_id)
             self.state = TCPStateMachine.THREE_WAY_HANDSHAKE_ACK
             self.release_packet()
             self.syn_received = True
         elif self.syn_received:
-            print("synack retransmit %s to %s" % (self.tcp_proto.router.id, self.destination_router_id))
             self.tcp_proto.syn_ack(self.destination_router_id)
             self.state = TCPStateMachine.THREE_WAY_HANDSHAKE_ACK
             self.release_packet()
@@ -100,40 +95,33 @@ class TCPStateMachine:
     def three_way_handshake_ack(self):
         packet = self.consume_packet()
         if packet is not None and packet.type == TCPPacket.ACK:
-            print("ack handler %s " % self.tcp_proto.router.id)
             self.connection_established = True
             self.state = TCPStateMachine.IDLE
             self.release_packet()
         else:
-            print("expected 3ack", self.tcp_proto.router.id)
             self.three_way_handshake_syn_listen()
 
     def three_way_handshake_syn_ack(self):
         packet = self.consume_packet()
         if packet is not None and packet.type == TCPPacket.SYN_ACK:
-            print("syn_ack handler %s " % self.tcp_proto.router.id)
             self.tcp_proto.ack(packet.src_router_id)
             self.connection_established = True
             self.state = TCPStateMachine.IDLE
             self.release_packet()
         else:
-            print("expected synack")
             self.state = TCPStateMachine.CONNECT
 
     # Receive Data ACK only
     def ack(self):
         packet = self.consume_packet()
-        #print("data ack handler")
         if packet is not None and packet.type == TCPPacket.ACK:
             self.tcp_proto.confirm_delivery()
-            print("data_left %s" % self.tcp_proto.data_left)
             self.state = TCPStateMachine.TRANSMIT
             if self.disconnect_in_progress:
                 self.transmission_done = True
 
             self.release_packet()
         else:
-            # print("expected data ack")
             # Prevent client ESTABLISHED <---> server SYN RECEIVED - from
             # If client did not get SYN-ACK packet, it means that segment wasn't delivered
             self.three_way_handshake_syn_ack()
@@ -144,7 +132,6 @@ class TCPStateMachine:
 
     # Transmit segment and wait for ack
     def transmit_segment(self):
-        print("transmit segment %s " % self.destination_router_id)
         if self.tcp_proto.data_left > 0:
             self.tcp_proto.transmit_message(self.destination_router_id)
         else:
@@ -162,12 +149,9 @@ class TCPStateMachine:
 
     def receive_segment(self):
         packet = self.consume_packet()
-        # print("receive")
         if packet is not None:
             if packet.type == TCPPacket.DATA:
-                # print("receive %s" % packet.message_size)
                 #if random.randint(1, 10) > 7:
-                print("receive %s and send ack" % packet.message_size)
                 self.tcp_proto.ack(packet.src_router_id)
                 self.state = TCPStateMachine.IDLE
             elif packet.type == TCPPacket.FIN:
